@@ -6,28 +6,34 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 // ==========================================
-// MIDDLEWARE
+// CORS
 // ==========================================
 
 const allowedOrigins = [
   "https://sanurpickle.netlify.app",
+  "https://www.sanurpickle.netlify.app",
   "http://localhost:5173",
+  "http://localhost:5174",
 ];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests without origin and allowed origins
+    origin: function (origin, callback) {
+      // Allow browser requests from allowed origins
+      // and requests without an Origin header
       if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
+        callback(null, true);
+      } else {
+        callback(null, false);
       }
-
-      return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 app.use(express.json());
 
@@ -65,7 +71,7 @@ let nextProductId = 4;
 let nextOrderId = 1;
 
 // ==========================================
-// HOME / HEALTH CHECK
+// HEALTH CHECK
 // ==========================================
 
 app.get("/", (req, res) => {
@@ -75,14 +81,21 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/api", (req, res) => {
+  res.json({
+    success: true,
+    message: "SANUR API is running",
+  });
+});
+
 // ==========================================
 // GET ALL PRODUCTS
 // ==========================================
 
 app.get("/api/products", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
-    products,
+    products: products,
   });
 });
 
@@ -91,37 +104,49 @@ app.get("/api/products", (req, res) => {
 // ==========================================
 
 app.post("/api/products", (req, res) => {
-  const { name, price, stock, image_url } = req.body;
+  try {
+    const { name, price, stock, image_url } = req.body;
 
-  if (!name || !name.trim()) {
-    return res.status(400).json({
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Product name is required",
+      });
+    }
+
+    if (price === undefined || Number(price) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid price",
+      });
+    }
+
+    const newProduct = {
+      id: nextProductId++,
+      name: String(name).trim(),
+      price: Number(price),
+      stock: Math.max(0, Number(stock) || 0),
+      image_url:
+        String(image_url || "chicken")
+          .trim()
+          .toLowerCase(),
+    };
+
+    products.push(newProduct);
+
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully",
+      product: newProduct,
+    });
+  } catch (error) {
+    console.error("Add product error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Product name is required",
+      message: "Failed to add product",
     });
   }
-
-  if (!price || Number(price) <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Please enter a valid price",
-    });
-  }
-
-  const newProduct = {
-    id: nextProductId++,
-    name: name.trim(),
-    price: Number(price),
-    stock: Number(stock) || 0,
-    image_url: image_url?.trim().toLowerCase() || "chicken",
-  };
-
-  products.push(newProduct);
-
-  res.status(201).json({
-    success: true,
-    message: "Product added successfully",
-    product: newProduct,
-  });
 });
 
 // ==========================================
@@ -129,49 +154,57 @@ app.post("/api/products", (req, res) => {
 // ==========================================
 
 app.put("/api/products/:id", (req, res) => {
-  const productId = Number(req.params.id);
-  const { name, price, stock, image_url } = req.body;
+  try {
+    const productId = Number(req.params.id);
+    const { name, price, stock, image_url } = req.body;
 
-  const productIndex = products.findIndex(
-    (product) => product.id === productId
-  );
+    const product = products.find(
+      (item) => item.id === productId
+    );
 
-  if (productIndex === -1) {
-    return res.status(404).json({
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Product name is required",
+      });
+    }
+
+    if (price === undefined || Number(price) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid price",
+      });
+    }
+
+    product.name = String(name).trim();
+    product.price = Number(price);
+    product.stock = Math.max(0, Number(stock) || 0);
+    product.image_url = String(
+      image_url || product.image_url
+    )
+      .trim()
+      .toLowerCase();
+
+    res.json({
+      success: true,
+      message: "Product updated successfully",
+      product,
+    });
+  } catch (error) {
+    console.error("Update product error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Product not found",
+      message: "Failed to update product",
     });
   }
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({
-      success: false,
-      message: "Product name is required",
-    });
-  }
-
-  if (!price || Number(price) <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Please enter a valid price",
-    });
-  }
-
-  products[productIndex] = {
-    ...products[productIndex],
-    name: name.trim(),
-    price: Number(price),
-    stock: Number(stock) || 0,
-    image_url:
-      image_url?.trim().toLowerCase() ||
-      products[productIndex].image_url,
-  };
-
-  res.json({
-    success: true,
-    message: "Product updated successfully",
-    product: products[productIndex],
-  });
 });
 
 // ==========================================
@@ -179,25 +212,34 @@ app.put("/api/products/:id", (req, res) => {
 // ==========================================
 
 app.delete("/api/products/:id", (req, res) => {
-  const productId = Number(req.params.id);
+  try {
+    const productId = Number(req.params.id);
 
-  const productIndex = products.findIndex(
-    (product) => product.id === productId
-  );
+    const productIndex = products.findIndex(
+      (item) => item.id === productId
+    );
 
-  if (productIndex === -1) {
-    return res.status(404).json({
+    if (productIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    products.splice(productIndex, 1);
+
+    res.json({
+      success: true,
+      message: "Product deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete product error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Product not found",
+      message: "Failed to delete product",
     });
   }
-
-  products.splice(productIndex, 1);
-
-  res.json({
-    success: true,
-    message: "Product deleted successfully",
-  });
 });
 
 // ==========================================
@@ -205,115 +247,130 @@ app.delete("/api/products/:id", (req, res) => {
 // ==========================================
 
 app.post("/api/orders", (req, res) => {
-  const { customer, items } = req.body;
+  try {
+    const { customer, items } = req.body;
 
-  if (
-    !customer ||
-    !customer.name?.trim() ||
-    !customer.phone?.trim() ||
-    !customer.address?.trim()
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Name, phone and address are required",
-    });
-  }
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Cart is empty",
-    });
-  }
-
-  const orderItems = [];
-  let totalAmount = 0;
-
-  for (const item of items) {
-    const productId = Number(item.id);
-    const quantity = Number(item.quantity);
-
-    const product = products.find(
-      (product) => product.id === productId
-    );
-
-    if (!product) {
+    if (
+      !customer ||
+      !customer.name ||
+      !customer.phone ||
+      !customer.address ||
+      !String(customer.name).trim() ||
+      !String(customer.phone).trim() ||
+      !String(customer.address).trim()
+    ) {
       return res.status(400).json({
         success: false,
-        message: `Product not found: ${productId}`,
+        message: "Name, phone and address are required",
       });
     }
 
-    if (!quantity || quantity <= 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid quantity",
+        message: "Cart is empty",
       });
     }
 
-    if (product.stock < quantity) {
-      return res.status(400).json({
-        success: false,
-        message: `${product.name} does not have enough stock`,
+    const orderItems = [];
+    let totalAmount = 0;
+
+    // Validate all items first
+    for (const item of items) {
+      const productId = Number(item.id);
+      const quantity = Number(item.quantity);
+
+      const product = products.find(
+        (item) => item.id === productId
+      );
+
+      if (!product) {
+        return res.status(400).json({
+          success: false,
+          message: `Product not found: ${productId}`,
+        });
+      }
+
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid quantity",
+        });
+      }
+
+      if (product.stock < quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `${product.name} does not have enough stock`,
+        });
+      }
+
+      const subtotal =
+        Number(product.price) * quantity;
+
+      orderItems.push({
+        id: `${nextOrderId}-${product.id}`,
+        productId: product.id,
+        product_name: product.name,
+        productName: product.name,
+        price: Number(product.price),
+        quantity: quantity,
+        subtotal: Number(subtotal.toFixed(2)),
       });
+
+      totalAmount += subtotal;
     }
 
-    const subtotal = Number(product.price) * quantity;
+    // Reduce stock only after validation
+    for (const item of orderItems) {
+      const product = products.find(
+        (itemProduct) =>
+          itemProduct.id === item.productId
+      );
 
-    orderItems.push({
-      id: `${nextOrderId}-${productId}`,
-      productId: product.id,
-      product_name: product.name,
-      productName: product.name,
-      price: Number(product.price),
-      quantity,
-      subtotal,
-    });
-
-    totalAmount += subtotal;
-  }
-
-  // Reduce stock
-  for (const item of orderItems) {
-    const product = products.find(
-      (product) => product.id === item.productId
-    );
-
-    if (product) {
-      product.stock -= item.quantity;
+      if (product) {
+        product.stock -= item.quantity;
+      }
     }
-  }
 
-  const orderId = nextOrderId++;
+    const orderId = nextOrderId++;
 
-  const newOrder = {
-    id: orderId,
-    order_number: `SANUR-${Date.now()}`,
-    customer_name: customer.name.trim(),
-    phone: customer.phone.trim(),
-    address: customer.address.trim(),
-    payment_method: "Cash on Delivery",
-    payment_status: "Pending",
-    order_status: "Placed",
-    total_amount: Number(totalAmount.toFixed(2)),
-    items: orderItems,
-    created_at: new Date().toISOString(),
-  };
+    const newOrder = {
+      id: orderId,
+      order_number: `SANUR-${Date.now()}`,
+      customer_name: String(customer.name).trim(),
+      phone: String(customer.phone).trim(),
+      address: String(customer.address).trim(),
+      payment_method: "Cash on Delivery",
+      payment_status: "Pending",
+      order_status: "Placed",
+      total_amount: Number(totalAmount.toFixed(2)),
+      items: orderItems,
+      created_at: new Date().toISOString(),
+    };
 
-  orders.unshift(newOrder);
+    orders.unshift(newOrder);
 
-  res.status(201).json({
-    success: true,
-    message: "Order placed successfully",
-    order: {
-      ...newOrder,
-      customer: {
-        name: newOrder.customer_name,
-        phone: newOrder.phone,
-        address: newOrder.address,
+    res.status(201).json({
+      success: true,
+      message: "Order placed successfully",
+      order: {
+        ...newOrder,
+        customer: {
+          name: newOrder.customer_name,
+          phone: newOrder.phone,
+          address: newOrder.address,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error("Create order error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to place order",
+    });
+  }
 });
 
 // ==========================================
@@ -323,16 +380,16 @@ app.post("/api/orders", (req, res) => {
 app.get("/api/orders", (req, res) => {
   res.json({
     success: true,
-    orders,
+    orders: orders,
   });
 });
 
 // ==========================================
-// GET ORDERS BY PHONE
+// GET CUSTOMER ORDERS
 // ==========================================
 
 app.get("/api/orders/customer/:phone", (req, res) => {
-  const phone = req.params.phone.trim();
+  const phone = String(req.params.phone).trim();
 
   const customerOrders = orders.filter(
     (order) => order.phone === phone
@@ -349,44 +406,53 @@ app.get("/api/orders/customer/:phone", (req, res) => {
 // ==========================================
 
 app.put("/api/orders/:id/status", (req, res) => {
-  const orderId = Number(req.params.id);
-  const { order_status } = req.body;
+  try {
+    const orderId = Number(req.params.id);
+    const { order_status } = req.body;
 
-  const allowedStatuses = [
-    "Placed",
-    "Confirmed",
-    "Processing",
-    "Shipped",
-    "Out for Delivery",
-    "Delivered",
-    "Cancelled",
-  ];
+    const allowedStatuses = [
+      "Placed",
+      "Confirmed",
+      "Processing",
+      "Shipped",
+      "Out for Delivery",
+      "Delivered",
+      "Cancelled",
+    ];
 
-  if (!allowedStatuses.includes(order_status)) {
-    return res.status(400).json({
+    if (!allowedStatuses.includes(order_status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order status",
+      });
+    }
+
+    const order = orders.find(
+      (item) => item.id === orderId
+    );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    order.order_status = order_status;
+
+    res.json({
+      success: true,
+      message: "Order status updated successfully",
+      order,
+    });
+  } catch (error) {
+    console.error("Update order status error:", error);
+
+    res.status(500).json({
       success: false,
-      message: "Invalid order status",
+      message: "Failed to update order status",
     });
   }
-
-  const order = orders.find(
-    (order) => order.id === orderId
-  );
-
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      message: "Order not found",
-    });
-  }
-
-  order.order_status = order_status;
-
-  res.json({
-    success: true,
-    message: "Order status updated successfully",
-    order,
-  });
 });
 
 // ==========================================
@@ -396,7 +462,20 @@ app.put("/api/orders/:id/status", (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.url}`,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// ==========================================
+// ERROR HANDLER
+// ==========================================
+
+app.use((error, req, res, next) => {
+  console.error("Server error:", error);
+
+  res.status(500).json({
+    success: false,
+    message: error.message || "Internal server error",
   });
 });
 
