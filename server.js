@@ -9,13 +9,21 @@ const PORT = process.env.PORT || 5001;
 // MIDDLEWARE
 // ==========================================
 
+const allowedOrigins = [
+  "https://sanurpickle.netlify.app",
+  "http://localhost:5173",
+];
+
 app.use(
   cors({
-    origin: [
-      "https://sanurpickle.netlify.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
+    origin: (origin, callback) => {
+      // Allow requests without origin and allowed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -24,7 +32,7 @@ app.use(
 app.use(express.json());
 
 // ==========================================
-// IN-MEMORY DATA (No Database)
+// IN-MEMORY DATA
 // ==========================================
 
 let products = [
@@ -34,7 +42,6 @@ let products = [
     price: 250,
     stock: 50,
     image_url: "chicken",
-    created_at: new Date().toISOString(),
   },
   {
     id: 2,
@@ -42,7 +49,6 @@ let products = [
     price: 350,
     stock: 40,
     image_url: "mutton",
-    created_at: new Date().toISOString(),
   },
   {
     id: 3,
@@ -50,22 +56,22 @@ let products = [
     price: 300,
     stock: 30,
     image_url: "beef",
-    created_at: new Date().toISOString(),
   },
 ];
 
 let orders = [];
+
 let nextProductId = 4;
 let nextOrderId = 1;
 
 // ==========================================
-// HOME
+// HOME / HEALTH CHECK
 // ==========================================
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "SANUR Pickles Backend API is running (No Database)",
+    message: "SANUR Pickles Backend is running",
   });
 });
 
@@ -74,38 +80,9 @@ app.get("/", (req, res) => {
 // ==========================================
 
 app.get("/api/products", (req, res) => {
-  res.status(200).json({
-    success: true,
-    products: products,
-  });
-});
-
-// ==========================================
-// GET SINGLE PRODUCT
-// ==========================================
-
-app.get("/api/products/:id", (req, res) => {
-  const productId = Number(req.params.id);
-
-  if (!Number.isInteger(productId) || productId <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid product ID",
-    });
-  }
-
-  const product = products.find((p) => p.id === productId);
-
-  if (!product) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
-  }
-
   res.json({
     success: true,
-    product: product,
+    products,
   });
 });
 
@@ -116,14 +93,14 @@ app.get("/api/products/:id", (req, res) => {
 app.post("/api/products", (req, res) => {
   const { name, price, stock, image_url } = req.body;
 
-  if (!name || name.trim() === "") {
+  if (!name || !name.trim()) {
     return res.status(400).json({
       success: false,
       message: "Product name is required",
     });
   }
 
-  if (price === undefined || price === null || Number.isNaN(Number(price)) || Number(price) <= 0) {
+  if (!price || Number(price) <= 0) {
     return res.status(400).json({
       success: false,
       message: "Please enter a valid price",
@@ -134,16 +111,15 @@ app.post("/api/products", (req, res) => {
     id: nextProductId++,
     name: name.trim(),
     price: Number(price),
-    stock: Number(stock || 0),
-    image_url: image_url?.trim() || null,
-    created_at: new Date().toISOString(),
+    stock: Number(stock) || 0,
+    image_url: image_url?.trim().toLowerCase() || "chicken",
   };
 
   products.push(newProduct);
 
   res.status(201).json({
     success: true,
-    message: "Product created successfully",
+    message: "Product added successfully",
     product: newProduct,
   });
 });
@@ -156,14 +132,9 @@ app.put("/api/products/:id", (req, res) => {
   const productId = Number(req.params.id);
   const { name, price, stock, image_url } = req.body;
 
-  if (!Number.isInteger(productId) || productId <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid product ID",
-    });
-  }
-
-  const productIndex = products.findIndex((p) => p.id === productId);
+  const productIndex = products.findIndex(
+    (product) => product.id === productId
+  );
 
   if (productIndex === -1) {
     return res.status(404).json({
@@ -179,7 +150,7 @@ app.put("/api/products/:id", (req, res) => {
     });
   }
 
-  if (price === undefined || price === null || Number.isNaN(Number(price)) || Number(price) <= 0) {
+  if (!price || Number(price) <= 0) {
     return res.status(400).json({
       success: false,
       message: "Please enter a valid price",
@@ -190,8 +161,10 @@ app.put("/api/products/:id", (req, res) => {
     ...products[productIndex],
     name: name.trim(),
     price: Number(price),
-    stock: Number(stock || 0),
-    image_url: image_url?.trim() || null,
+    stock: Number(stock) || 0,
+    image_url:
+      image_url?.trim().toLowerCase() ||
+      products[productIndex].image_url,
   };
 
   res.json({
@@ -208,26 +181,9 @@ app.put("/api/products/:id", (req, res) => {
 app.delete("/api/products/:id", (req, res) => {
   const productId = Number(req.params.id);
 
-  if (!Number.isInteger(productId) || productId <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid product ID",
-    });
-  }
-
-  // Check if product exists in any order
-  const isInOrder = orders.some((order) =>
-    order.items.some((item) => item.productId === productId)
+  const productIndex = products.findIndex(
+    (product) => product.id === productId
   );
-
-  if (isInOrder) {
-    return res.status(400).json({
-      success: false,
-      message: "Cannot delete this product because it exists in previous orders.",
-    });
-  }
-
-  const productIndex = products.findIndex((p) => p.id === productId);
 
   if (productIndex === -1) {
     return res.status(404).json({
@@ -251,18 +207,12 @@ app.delete("/api/products/:id", (req, res) => {
 app.post("/api/orders", (req, res) => {
   const { customer, items } = req.body;
 
-  if (!customer) {
-    return res.status(400).json({
-      success: false,
-      message: "Customer details are required",
-    });
-  }
-
-  const customerName = (customer.name || "").trim();
-  const customerPhone = (customer.phone || "").trim();
-  const customerAddress = (customer.address || "").trim();
-
-  if (!customerName || !customerPhone || !customerAddress) {
+  if (
+    !customer ||
+    !customer.name?.trim() ||
+    !customer.phone?.trim() ||
+    !customer.address?.trim()
+  ) {
     return res.status(400).json({
       success: false,
       message: "Name, phone and address are required",
@@ -272,7 +222,7 @@ app.post("/api/orders", (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({
       success: false,
-      message: "Order must contain at least one product",
+      message: "Cart is empty",
     });
   }
 
@@ -283,52 +233,65 @@ app.post("/api/orders", (req, res) => {
     const productId = Number(item.id);
     const quantity = Number(item.quantity);
 
-    if (!Number.isInteger(productId) || productId <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid product ID",
-      });
-    }
-
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid product quantity",
-      });
-    }
-
-    const product = products.find((p) => p.id === productId);
+    const product = products.find(
+      (product) => product.id === productId
+    );
 
     if (!product) {
       return res.status(400).json({
         success: false,
-        message: `Product ID ${productId} not found`,
+        message: `Product not found: ${productId}`,
       });
     }
 
-    const price = Number(product.price);
-    const subtotal = price * quantity;
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid quantity",
+      });
+    }
 
-    totalAmount += subtotal;
+    if (product.stock < quantity) {
+      return res.status(400).json({
+        success: false,
+        message: `${product.name} does not have enough stock`,
+      });
+    }
+
+    const subtotal = Number(product.price) * quantity;
 
     orderItems.push({
-      productId,
+      id: `${nextOrderId}-${productId}`,
+      productId: product.id,
+      product_name: product.name,
       productName: product.name,
-      price,
+      price: Number(product.price),
       quantity,
       subtotal,
     });
+
+    totalAmount += subtotal;
   }
 
-  const orderNumber = `SANUR-${Date.now()}`;
+  // Reduce stock
+  for (const item of orderItems) {
+    const product = products.find(
+      (product) => product.id === item.productId
+    );
+
+    if (product) {
+      product.stock -= item.quantity;
+    }
+  }
+
   const orderId = nextOrderId++;
 
   const newOrder = {
     id: orderId,
-    order_number: orderNumber,
-    customer_name: customerName,
-    phone: customerPhone,
-    address: customerAddress,
+    order_number: `SANUR-${Date.now()}`,
+    customer_name: customer.name.trim(),
+    phone: customer.phone.trim(),
+    address: customer.address.trim(),
     payment_method: "Cash on Delivery",
     payment_status: "Pending",
     order_status: "Placed",
@@ -337,24 +300,18 @@ app.post("/api/orders", (req, res) => {
     created_at: new Date().toISOString(),
   };
 
-  orders.push(newOrder);
+  orders.unshift(newOrder);
 
   res.status(201).json({
     success: true,
     message: "Order placed successfully",
     order: {
-      id: orderId,
-      order_number: orderNumber,
+      ...newOrder,
       customer: {
-        name: customerName,
-        phone: customerPhone,
-        address: customerAddress,
+        name: newOrder.customer_name,
+        phone: newOrder.phone,
+        address: newOrder.address,
       },
-      items: orderItems,
-      payment_method: "Cash on Delivery",
-      payment_status: "Pending",
-      order_status: "Placed",
-      total_amount: Number(totalAmount.toFixed(2)),
     },
   });
 });
@@ -366,18 +323,20 @@ app.post("/api/orders", (req, res) => {
 app.get("/api/orders", (req, res) => {
   res.json({
     success: true,
-    orders: orders,
+    orders,
   });
 });
 
 // ==========================================
-// GET CUSTOMER ORDERS BY PHONE
+// GET ORDERS BY PHONE
 // ==========================================
 
 app.get("/api/orders/customer/:phone", (req, res) => {
   const phone = req.params.phone.trim();
 
-  const customerOrders = orders.filter((order) => order.phone === phone);
+  const customerOrders = orders.filter(
+    (order) => order.phone === phone
+  );
 
   res.json({
     success: true,
@@ -403,13 +362,6 @@ app.put("/api/orders/:id/status", (req, res) => {
     "Cancelled",
   ];
 
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid order ID",
-    });
-  }
-
   if (!allowedStatuses.includes(order_status)) {
     return res.status(400).json({
       success: false,
@@ -417,20 +369,23 @@ app.put("/api/orders/:id/status", (req, res) => {
     });
   }
 
-  const orderIndex = orders.findIndex((o) => o.id === orderId);
+  const order = orders.find(
+    (order) => order.id === orderId
+  );
 
-  if (orderIndex === -1) {
+  if (!order) {
     return res.status(404).json({
       success: false,
       message: "Order not found",
     });
   }
 
-  orders[orderIndex].order_status = order_status;
+  order.order_status = order_status;
 
   res.json({
     success: true,
     message: "Order status updated successfully",
+    order,
   });
 });
 
@@ -441,7 +396,7 @@ app.put("/api/orders/:id/status", (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `API route not found: ${req.method} ${req.url}`,
+    message: `Route not found: ${req.method} ${req.url}`,
   });
 });
 
@@ -450,8 +405,5 @@ app.use((req, res) => {
 // ==========================================
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("================================");
-  console.log("SANUR Pickles Backend Running (No Database)");
-  console.log(`Port: ${PORT}`);
-  console.log("================================");
+  console.log(`SANUR backend running on port ${PORT}`);
 });
