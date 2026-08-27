@@ -70,22 +70,22 @@ let products = [
   {
     id: 1,
     name: "Chicken Pickle",
-    price: 250,
-    stock: 50,
+    price: 160,
+    stock: 100,
     image_url: "chicken",
   },
   {
     id: 2,
     name: "Mutton Pickle",
-    price: 350,
-    stock: 40,
+    price: 420,
+    stock: 100,
     image_url: "mutton",
   },
   {
     id: 3,
     name: "Beef Pickle",
-    price: 300,
-    stock: 30,
+    price: 190,
+    stock: 100,
     image_url: "beef",
   },
 ];
