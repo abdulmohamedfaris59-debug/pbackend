@@ -6,7 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 // ==========================================
-// CORS
+// ALLOWED ORIGINS
 // ==========================================
 
 const allowedOrigins = [
@@ -16,26 +16,51 @@ const allowedOrigins = [
   "http://localhost:5174",
 ];
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Allow browser requests from allowed origins
-      // and requests without an Origin header
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+// ==========================================
+// CORS MIDDLEWARE
+// ==========================================
 
-// Handle preflight requests
-app.options("*", cors());
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow Postman, Render health checks and requests without Origin
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("Blocked by CORS:", origin);
+
+    return callback(null, false);
+  },
+
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+  ],
+
+  credentials: false,
+};
+
+app.use(cors(corsOptions));
+
+// ==========================================
+// MIDDLEWARE
+// ==========================================
 
 app.use(express.json());
+
+// Request logger - useful in Render logs
+app.use((req, res, next) => {
+  console.log(
+    `${new Date().toISOString()} - ${req.method} ${req.url}`
+  );
+  next();
+});
 
 // ==========================================
 // IN-MEMORY DATA
@@ -75,14 +100,15 @@ let nextOrderId = 1;
 // ==========================================
 
 app.get("/", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     message: "SANUR Pickles Backend is running",
+    environment: process.env.NODE_ENV || "development",
   });
 });
 
 app.get("/api", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     message: "SANUR API is running",
   });
@@ -95,7 +121,7 @@ app.get("/api", (req, res) => {
 app.get("/api/products", (req, res) => {
   res.status(200).json({
     success: true,
-    products: products,
+    products,
   });
 });
 
@@ -105,7 +131,12 @@ app.get("/api/products", (req, res) => {
 
 app.post("/api/products", (req, res) => {
   try {
-    const { name, price, stock, image_url } = req.body;
+    const {
+      name,
+      price,
+      stock,
+      image_url,
+    } = req.body;
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({
@@ -114,7 +145,11 @@ app.post("/api/products", (req, res) => {
       });
     }
 
-    if (price === undefined || Number(price) <= 0) {
+    if (
+      price === undefined ||
+      price === null ||
+      Number(price) <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid price",
@@ -125,24 +160,31 @@ app.post("/api/products", (req, res) => {
       id: nextProductId++,
       name: String(name).trim(),
       price: Number(price),
-      stock: Math.max(0, Number(stock) || 0),
-      image_url:
-        String(image_url || "chicken")
-          .trim()
-          .toLowerCase(),
+      stock: Math.max(
+        0,
+        Number(stock) || 0
+      ),
+      image_url: String(
+        image_url || "chicken"
+      )
+        .trim()
+        .toLowerCase(),
     };
 
     products.push(newProduct);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Product added successfully",
       product: newProduct,
     });
   } catch (error) {
-    console.error("Add product error:", error);
+    console.error(
+      "Add product error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to add product",
     });
@@ -155,8 +197,16 @@ app.post("/api/products", (req, res) => {
 
 app.put("/api/products/:id", (req, res) => {
   try {
-    const productId = Number(req.params.id);
-    const { name, price, stock, image_url } = req.body;
+    const productId = Number(
+      req.params.id
+    );
+
+    const {
+      name,
+      price,
+      stock,
+      image_url,
+    } = req.body;
 
     const product = products.find(
       (item) => item.id === productId
@@ -176,7 +226,11 @@ app.put("/api/products/:id", (req, res) => {
       });
     }
 
-    if (price === undefined || Number(price) <= 0) {
+    if (
+      price === undefined ||
+      price === null ||
+      Number(price) <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid price",
@@ -185,22 +239,31 @@ app.put("/api/products/:id", (req, res) => {
 
     product.name = String(name).trim();
     product.price = Number(price);
-    product.stock = Math.max(0, Number(stock) || 0);
+
+    product.stock = Math.max(
+      0,
+      Number(stock) || 0
+    );
+
     product.image_url = String(
       image_url || product.image_url
     )
       .trim()
       .toLowerCase();
 
-    res.json({
+    return res.status(200).json({
       success: true,
-      message: "Product updated successfully",
+      message:
+        "Product updated successfully",
       product,
     });
   } catch (error) {
-    console.error("Update product error:", error);
+    console.error(
+      "Update product error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to update product",
     });
@@ -213,11 +276,14 @@ app.put("/api/products/:id", (req, res) => {
 
 app.delete("/api/products/:id", (req, res) => {
   try {
-    const productId = Number(req.params.id);
-
-    const productIndex = products.findIndex(
-      (item) => item.id === productId
+    const productId = Number(
+      req.params.id
     );
+
+    const productIndex =
+      products.findIndex(
+        (item) => item.id === productId
+      );
 
     if (productIndex === -1) {
       return res.status(404).json({
@@ -228,16 +294,21 @@ app.delete("/api/products/:id", (req, res) => {
 
     products.splice(productIndex, 1);
 
-    res.json({
+    return res.status(200).json({
       success: true,
-      message: "Product deleted successfully",
+      message:
+        "Product deleted successfully",
     });
   } catch (error) {
-    console.error("Delete product error:", error);
+    console.error(
+      "Delete product error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to delete product",
+      message:
+        "Failed to delete product",
     });
   }
 });
@@ -248,7 +319,10 @@ app.delete("/api/products/:id", (req, res) => {
 
 app.post("/api/orders", (req, res) => {
   try {
-    const { customer, items } = req.body;
+    const {
+      customer,
+      items,
+    } = req.body;
 
     if (
       !customer ||
@@ -261,11 +335,15 @@ app.post("/api/orders", (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Name, phone and address are required",
+        message:
+          "Name, phone and address are required",
       });
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
+    if (
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Cart is empty",
@@ -275,13 +353,16 @@ app.post("/api/orders", (req, res) => {
     const orderItems = [];
     let totalAmount = 0;
 
-    // Validate all items first
+    // Validate every item first
     for (const item of items) {
       const productId = Number(item.id);
-      const quantity = Number(item.quantity);
+      const quantity = Number(
+        item.quantity
+      );
 
       const product = products.find(
-        (item) => item.id === productId
+        (productItem) =>
+          productItem.id === productId
       );
 
       if (!product) {
@@ -291,7 +372,10 @@ app.post("/api/orders", (req, res) => {
         });
       }
 
-      if (!Number.isInteger(quantity) || quantity <= 0) {
+      if (
+        !Number.isInteger(quantity) ||
+        quantity <= 0
+      ) {
         return res.status(400).json({
           success: false,
           message: "Invalid quantity",
@@ -309,23 +393,24 @@ app.post("/api/orders", (req, res) => {
         Number(product.price) * quantity;
 
       orderItems.push({
-        id: `${nextOrderId}-${product.id}`,
         productId: product.id,
         product_name: product.name,
         productName: product.name,
         price: Number(product.price),
-        quantity: quantity,
-        subtotal: Number(subtotal.toFixed(2)),
+        quantity,
+        subtotal: Number(
+          subtotal.toFixed(2)
+        ),
       });
 
       totalAmount += subtotal;
     }
 
-    // Reduce stock only after validation
+    // Reduce stock after all validation succeeds
     for (const item of orderItems) {
       const product = products.find(
-        (itemProduct) =>
-          itemProduct.id === item.productId
+        (productItem) =>
+          productItem.id === item.productId
       );
 
       if (product) {
@@ -337,38 +422,70 @@ app.post("/api/orders", (req, res) => {
 
     const newOrder = {
       id: orderId,
-      order_number: `SANUR-${Date.now()}`,
-      customer_name: String(customer.name).trim(),
-      phone: String(customer.phone).trim(),
-      address: String(customer.address).trim(),
-      payment_method: "Cash on Delivery",
-      payment_status: "Pending",
-      order_status: "Placed",
-      total_amount: Number(totalAmount.toFixed(2)),
+
+      order_number:
+        `SANUR-${Date.now()}`,
+
+      customer_name:
+        String(customer.name).trim(),
+
+      phone:
+        String(customer.phone).trim(),
+
+      address:
+        String(customer.address).trim(),
+
+      payment_method:
+        "Cash on Delivery",
+
+      payment_status:
+        "Pending",
+
+      order_status:
+        "Placed",
+
+      total_amount: Number(
+        totalAmount.toFixed(2)
+      ),
+
       items: orderItems,
-      created_at: new Date().toISOString(),
+
+      created_at:
+        new Date().toISOString(),
     };
 
     orders.unshift(newOrder);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Order placed successfully",
+      message:
+        "Order placed successfully",
+
       order: {
         ...newOrder,
+
         customer: {
-          name: newOrder.customer_name,
-          phone: newOrder.phone,
-          address: newOrder.address,
+          name:
+            newOrder.customer_name,
+
+          phone:
+            newOrder.phone,
+
+          address:
+            newOrder.address,
         },
       },
     });
   } catch (error) {
-    console.error("Create order error:", error);
+    console.error(
+      "Create order error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to place order",
+      message:
+        "Failed to place order",
     });
   }
 });
@@ -378,9 +495,9 @@ app.post("/api/orders", (req, res) => {
 // ==========================================
 
 app.get("/api/orders", (req, res) => {
-  res.json({
+  return res.status(200).json({
     success: true,
-    orders: orders,
+    orders,
   });
 });
 
@@ -388,79 +505,106 @@ app.get("/api/orders", (req, res) => {
 // GET CUSTOMER ORDERS
 // ==========================================
 
-app.get("/api/orders/customer/:phone", (req, res) => {
-  const phone = String(req.params.phone).trim();
+app.get(
+  "/api/orders/customer/:phone",
+  (req, res) => {
+    const phone = String(
+      req.params.phone
+    ).trim();
 
-  const customerOrders = orders.filter(
-    (order) => order.phone === phone
-  );
+    const customerOrders =
+      orders.filter(
+        (order) =>
+          order.phone === phone
+      );
 
-  res.json({
-    success: true,
-    orders: customerOrders,
-  });
-});
+    return res.status(200).json({
+      success: true,
+      orders: customerOrders,
+    });
+  }
+);
 
 // ==========================================
 // UPDATE ORDER STATUS
 // ==========================================
 
-app.put("/api/orders/:id/status", (req, res) => {
-  try {
-    const orderId = Number(req.params.id);
-    const { order_status } = req.body;
+app.put(
+  "/api/orders/:id/status",
+  (req, res) => {
+    try {
+      const orderId = Number(
+        req.params.id
+      );
 
-    const allowedStatuses = [
-      "Placed",
-      "Confirmed",
-      "Processing",
-      "Shipped",
-      "Out for Delivery",
-      "Delivered",
-      "Cancelled",
-    ];
+      const {
+        order_status,
+      } = req.body;
 
-    if (!allowedStatuses.includes(order_status)) {
-      return res.status(400).json({
+      const allowedStatuses = [
+        "Placed",
+        "Confirmed",
+        "Processing",
+        "Shipped",
+        "Out for Delivery",
+        "Delivered",
+        "Cancelled",
+      ];
+
+      if (
+        !allowedStatuses.includes(
+          order_status
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid order status",
+        });
+      }
+
+      const order = orders.find(
+        (item) =>
+          item.id === orderId
+      );
+
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+
+      order.order_status =
+        order_status;
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Order status updated successfully",
+        order,
+      });
+    } catch (error) {
+      console.error(
+        "Update order status error:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
-        message: "Invalid order status",
+        message:
+          "Failed to update status",
       });
     }
-
-    const order = orders.find(
-      (item) => item.id === orderId
-    );
-
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    order.order_status = order_status;
-
-    res.json({
-      success: true,
-      message: "Order status updated successfully",
-      order,
-    });
-  } catch (error) {
-    console.error("Update order status error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update order status",
-    });
   }
-});
+);
 
 // ==========================================
-// 404
+// 404 HANDLER
 // ==========================================
 
 app.use((req, res) => {
-  res.status(404).json({
+  return res.status(404).json({
     success: false,
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
@@ -470,19 +614,36 @@ app.use((req, res) => {
 // ERROR HANDLER
 // ==========================================
 
-app.use((error, req, res, next) => {
-  console.error("Server error:", error);
+app.use(
+  (error, req, res, next) => {
+    console.error(
+      "Server error:",
+      error
+    );
 
-  res.status(500).json({
-    success: false,
-    message: error.message || "Internal server error",
-  });
-});
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Internal server error",
+    });
+  }
+);
 
 // ==========================================
 // START SERVER
 // ==========================================
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`SANUR backend running on port ${PORT}`);
+  console.log(
+    `SANUR backend running on port ${PORT}`
+  );
+
+  console.log(
+    `Products API: http://localhost:${PORT}/api/products`
+  );
 });
