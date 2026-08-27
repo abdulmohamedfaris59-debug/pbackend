@@ -13,8 +13,9 @@ const PORT = process.env.PORT || 5001;
 app.use(
   cors({
     origin: [
-     
       "https://sanurpickle.netlify.app",
+      "http://localhost:5173",  // For local development
+      "http://localhost:3000",   // For local development
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -33,12 +34,7 @@ const pool = mysql.createPool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-
-  ssl:
-    process.env.DB_SSL === "true"
-      ? { rejectUnauthorized: false }
-      : undefined,
-
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -51,9 +47,7 @@ const pool = mysql.createPool({
 async function testDatabaseConnection() {
   try {
     const connection = await pool.getConnection();
-
     console.log("✅ Database connected successfully");
-
     connection.release();
   } catch (error) {
     console.error("❌ Database connection error:", error.message);
@@ -97,7 +91,6 @@ app.get("/api/products", async (req, res) => {
     });
   } catch (error) {
     console.error("Get products error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch products",
@@ -148,7 +141,6 @@ app.get("/api/products/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Get product error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch product",
@@ -171,12 +163,7 @@ app.post("/api/products", async (req, res) => {
       });
     }
 
-    if (
-      price === undefined ||
-      price === null ||
-      Number.isNaN(Number(price)) ||
-      Number(price) <= 0
-    ) {
+    if (price === undefined || price === null || Number.isNaN(Number(price)) || Number(price) <= 0) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid price",
@@ -193,12 +180,7 @@ app.post("/api/products", async (req, res) => {
       )
       VALUES (?, ?, ?, ?)
       `,
-      [
-        name.trim(),
-        Number(price),
-        Number(stock || 0),
-        image_url?.trim() || null,
-      ]
+      [name.trim(), Number(price), Number(stock || 0), image_url?.trim() || null]
     );
 
     const [products] = await pool.query(
@@ -217,7 +199,6 @@ app.post("/api/products", async (req, res) => {
     });
   } catch (error) {
     console.error("Create product error:", error);
-
     res.status(500).json({
       success: false,
       message: error.message || "Failed to create product",
@@ -248,12 +229,7 @@ app.put("/api/products/:id", async (req, res) => {
       });
     }
 
-    if (
-      price === undefined ||
-      price === null ||
-      Number.isNaN(Number(price)) ||
-      Number(price) <= 0
-    ) {
+    if (price === undefined || price === null || Number.isNaN(Number(price)) || Number(price) <= 0) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid price",
@@ -270,13 +246,7 @@ app.put("/api/products/:id", async (req, res) => {
         image_url = ?
       WHERE id = ?
       `,
-      [
-        name.trim(),
-        Number(price),
-        Number(stock || 0),
-        image_url?.trim() || null,
-        productId,
-      ]
+      [name.trim(), Number(price), Number(stock || 0), image_url?.trim() || null, productId]
     );
 
     if (result.affectedRows === 0) {
@@ -286,10 +256,7 @@ app.put("/api/products/:id", async (req, res) => {
       });
     }
 
-    const [products] = await pool.query(
-      `SELECT * FROM products WHERE id = ?`,
-      [productId]
-    );
+    const [products] = await pool.query(`SELECT * FROM products WHERE id = ?`, [productId]);
 
     res.json({
       success: true,
@@ -298,7 +265,6 @@ app.put("/api/products/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Update product error:", error);
-
     res.status(500).json({
       success: false,
       message: error.message || "Failed to update product",
@@ -334,15 +300,11 @@ app.delete("/api/products/:id", async (req, res) => {
     if (orderItems.length > 0) {
       return res.status(400).json({
         success: false,
-        message:
-          "Cannot delete this product because it exists in previous orders.",
+        message: "Cannot delete this product because it exists in previous orders.",
       });
     }
 
-    const [result] = await pool.query(
-      `DELETE FROM products WHERE id = ?`,
-      [productId]
-    );
+    const [result] = await pool.query(`DELETE FROM products WHERE id = ?`, [productId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
@@ -357,7 +319,6 @@ app.delete("/api/products/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Delete product error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to delete product",
@@ -374,7 +335,6 @@ app.post("/api/orders", async (req, res) => {
 
   try {
     connection = await pool.getConnection();
-
     const { customer, items } = req.body;
 
     if (!customer) {
@@ -419,7 +379,6 @@ app.post("/api/orders", async (req, res) => {
 
     if (existingCustomers.length > 0) {
       customerId = existingCustomers[0].id;
-
       await connection.query(
         `
         UPDATE customers
@@ -440,7 +399,6 @@ app.post("/api/orders", async (req, res) => {
         `,
         [customerName, customerPhone, customerAddress]
       );
-
       customerId = customerResult.insertId;
     }
 
@@ -535,14 +493,7 @@ app.post("/api/orders", async (req, res) => {
         )
         VALUES (?, ?, ?, ?, ?, ?)
         `,
-        [
-          orderId,
-          item.productId,
-          item.productName,
-          item.price,
-          item.quantity,
-          item.subtotal,
-        ]
+        [orderId, item.productId, item.productName, item.price, item.quantity, item.subtotal]
       );
     }
 
@@ -570,9 +521,7 @@ app.post("/api/orders", async (req, res) => {
     if (connection) {
       await connection.rollback();
     }
-
     console.error("Create order error:", error);
-
     res.status(400).json({
       success: false,
       message: error.message || "Failed to place order",
@@ -621,7 +570,6 @@ app.get("/api/orders", async (req, res) => {
     });
   } catch (error) {
     console.error("Get orders error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to fetch orders",
@@ -672,7 +620,6 @@ app.get("/api/orders/customer/:phone", async (req, res) => {
     });
   } catch (error) {
     console.error("Customer orders error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to load customer orders",
@@ -735,7 +682,6 @@ app.put("/api/orders/:id/status", async (req, res) => {
     });
   } catch (error) {
     console.error("Update order status error:", error);
-
     res.status(500).json({
       success: false,
       message: "Failed to update order status",
